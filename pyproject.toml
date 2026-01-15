@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=75.1.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traffic-monitor"
+version = "0.1.0"
+description = "AI App Object Tracking"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Ngoc Tran" }]
+keywords = ["ai", "object-tracking", "yolo", "traffic"]
+
+dependencies = [
+  "ultralytics",
+  "cap-from-youtube",
+  "lapx",
+  "yt-dlp[default]",  # cài đặt kèm yt-dlp-ejs
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy", # Check type
+  "ruff", # Formatter
+]
+
+[project.scripts]
+traffic-app = "traffic_monitor.main:main"
+
+# Cấu hình Ruff (Formatter)
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# E: Error, F: Pyflakes, I: Import sort (tự sắp xếp import)
+select = ["E", "F", "I"]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# Cấu hình Mypy (Type Checker)
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = "ultralytics.*"
+ignore_missing_imports = true
+implicit_reexport = true
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { dir = "src" }]
