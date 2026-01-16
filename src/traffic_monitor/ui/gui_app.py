@@ -6,10 +6,14 @@ import torch
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QImage, QPixmap
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -20,25 +24,45 @@ from traffic_monitor.utils.youtube import cap_from_youtube
 
 
 class VideoThread(QThread):
-    # Signal để gửi thông tin đã xử lý về UI
+    # Gửi thông tin đã xử lý về UI
     change_pixmap_signal = pyqtSignal(QImage)
     # Gửi dictionary chứa: ảnh cắt, tên loại xe, thời gian, độ tin cậy
     new_detection_signal = pyqtSignal(dict)
+    # Gửi data thống kê: {"car": 10, "bike": 5}
+    stats_signal = pyqtSignal(dict)
 
-    def __init__(self, ytb_url: str):
+    # thêm validate source_type
+    def __init__(self, source: str, source_type: str, resolution: str):
         super().__init__()
-        self.ytb_url = ytb_url
+        self.source = source
+        self.source_type = source_type.lower()
+        self.resolution = resolution
         self._run_flag = True
         self.last_tracked_ids: set[int] = set()
+        # Tổng số lượng theo từng loại xe
+        self.counts: dict[str, int] = {}
 
     def run(self) -> None:
         try:
+            # thêm đã load rồi thì không cần load lại nữa
             detector = TrafficDetector()
 
-            cap = cap_from_youtube(self.ytb_url, "720p")
+            cap = None
+
+            if self.source_type == "youtube":
+                # thêm chọn độ phân giải từ GUI
+                cap = cap_from_youtube(self.source, self.resolution)
+            elif self.source_type == "webcam":
+                camera_id = int(self.source) if self.source.isdigit() else 0
+                cap = cv2.VideoCapture(camera_id)
+            elif self.source_type in ["local file", "link mp4", "rtsp camera"]:
+                # File local, link .mp4 trực tiếp, hoặc RTSP camera
+                cap = cv2.VideoCapture(self.source)
+            else:
+                raise ValueError(f"Nguồn '{self.source_type}' không được hỗ trợ.")
 
             if not cap.isOpened():
-                print("[-] LỖI: Không thể mở luồng video.")
+                print(f"[-] LỖI: Không thể mở nguồn {self.source_type}")
                 return
 
             while self._run_flag:
@@ -68,6 +92,12 @@ class VideoThread(QThread):
                     for i, obj_id in enumerate(ids):
                         if obj_id not in self.last_tracked_ids:
                             self.last_tracked_ids.add(obj_id)
+
+                            # Đếm xe
+                            label = res.names[int(res.boxes[i].cls[0])]
+                            self.counts[label] = self.counts.get(label, 0) + 1
+                            # Gửi data mới cho UI
+                            self.stats_signal.emit(self.counts)
 
                             # Giới hạn kích thước bộ nhớ ID
                             if len(self.last_tracked_ids) > 100:
@@ -156,14 +186,78 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Hệ thống giám sát Giao thông")
         self.resize(1300, 800)
         self.setStyleSheet("background-color: #1a1a1a;")
+        self.video_thread: VideoThread | None = None
 
-        # Layout chính: Ngang (Video | Sidebar)
-        main_layout = QHBoxLayout()
+        # Layout chính
+        main_vbox = QVBoxLayout()
+
+        # Dashboard Bar
+        self.stats_widget = QWidget()
+        self.stats_widget.setStyleSheet(
+            "background-color: #252525; border-bottom: 1px solid #444;"
+        )
+        self.stats_layout = QHBoxLayout(self.stats_widget)
+        self.stats_label = QLabel("📊 THỐNG KÊ: Đang chờ dữ liệu...")
+        self.stats_label.setStyleSheet(
+            "color: #00FF00; font-weight: bold; font-size: 16px;"
+        )
+        self.stats_layout.addWidget(self.stats_label)
+
+        # Control Panel
+        self.control_group = QGroupBox("Cấu hình nguồn vào")
+        control_layout = QHBoxLayout(self.control_group)
+
+        # Chọn loại nguồn
+        self.source_combo = QComboBox()
+        self.source_combo.addItems(
+            ["YouTube", "Webcam", "Local File | Link MP4", "RTSP camera"]
+        )
+        self.source_combo.currentTextChanged.connect(self.on_source_type_changed)
+
+        # Nhập đường dẫn/URL
+        self.source_input = QLineEdit()
+        self.source_input.setPlaceholderText("Nhập URL YouTube hoặc đường dẫn file...")
+
+        # Chọn độ phân giải (Mặc định ẩn, chỉ hiện cho YouTube)
+        self.res_combo = QComboBox()
+        self.res_combo.addItems(
+            [
+                "360p",
+                "480p",
+                "720p",
+                "720p60",
+                "1080p",
+                "1080p60",
+                "1440p",
+                "1440p60",
+                "2160p",
+                "2160p60",
+            ]
+        )
+        self.res_combo.setEnabled(True)
+
+        # Nút Start/Stop
+        self.start_btn = QPushButton("Bắt đầu")
+        self.start_btn.clicked.connect(self.toggle_detection)
+        self.start_btn.setStyleSheet(
+            "background-color: #2e7d32; color: white; font-weight: bold;"
+        )
+
+        control_layout.addWidget(QLabel("Nguồn:"))
+        control_layout.addWidget(self.source_combo)
+        control_layout.addWidget(QLabel("Đường dẫn:"))
+        control_layout.addWidget(self.source_input)
+        control_layout.addWidget(QLabel("Độ phân giải:"))
+        control_layout.addWidget(self.res_combo)
+        control_layout.addWidget(self.start_btn)
+
+        # Ngang (Video | Sidebar)
+        content_layout = QHBoxLayout()
 
         # Video Area
         self.video_label = QLabel("Đang tải stream...")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(self.video_label, stretch=4)  # Chiếm 4 phần diện tích
+        content_layout.addWidget(self.video_label, stretch=4)  # Chiếm 4 phần diện tích
 
         # Sidebar Area
         self.sidebar_scroll = QScrollArea()
@@ -174,17 +268,21 @@ class MainWindow(QMainWindow):
         # self.sidebar_scroll.setWidgetResizable(True)
         self.sidebar_scroll.setFixedWidth(300)
         self.sidebar_scroll.setWidget(self.sidebar_container)
-        main_layout.addWidget(self.sidebar_scroll, stretch=1)
+        content_layout.addWidget(self.sidebar_scroll, stretch=1)
+
+        main_vbox.addWidget(self.stats_widget)
+        main_vbox.addWidget(self.control_group)
+        main_vbox.addLayout(content_layout)
 
         central_widget = QWidget()
-        central_widget.setLayout(main_layout)
+        central_widget.setLayout(main_vbox)
         self.setCentralWidget(central_widget)
 
-        url = "https://www.youtube.com/watch?v=4aWufTZDLMU"
-        self.video_thread = VideoThread(url)
-        self.video_thread.change_pixmap_signal.connect(self.update_video)
-        self.video_thread.new_detection_signal.connect(self.add_detection_card)
-        self.video_thread.start()
+    def update_stats(self, counts: dict[str, int]) -> None:
+        """Cập nhật dòng chữ thống kê trên Dashboard"""
+        stat_items = [f"{label.upper()}: {value}" for label, value in counts.items()]
+        display_text = "  |  ".join(stat_items)
+        self.stats_label.setText(f"📊 THỐNG KÊ: {display_text}")
 
     def update_image(self, qt_image: QImage) -> None:
         # Cập nhật khung hình lên giao diện
@@ -220,9 +318,41 @@ class MainWindow(QMainWindow):
         card = DetectionCard(data)
         self.sidebar_layout.insertWidget(0, card)
 
+    def on_source_type_changed(self, text: str) -> None:
+        """Tự động ẩn/hiện độ phân giải tùy theo nguồn"""
+        is_youtube = text.lower() == "youtube"
+        self.res_combo.setEnabled(is_youtube)
+
+    def toggle_detection(self) -> None:
+        """Xử lý sự kiện nhấn nút Bắt đầu / Dừng lại"""
+        if self.video_thread is not None and self.video_thread.isRunning():
+            # Nếu đang chạy thì dừng lại
+            self.video_thread.stop()
+            self.start_btn.setText("Bắt đầu")
+            self.start_btn.setStyleSheet("background-color: #2e7d32; color: white;")
+            self.video_label.setText("Đã dừng.")
+        else:
+            # Nếu đang dừng thì bắt đầu luồng mới
+            source = self.source_input.text()
+            source_type = self.source_combo.currentText()
+            res = self.res_combo.currentText()
+
+            if not source and source_type.lower() != "webcam":
+                return  # Cần có link hoặc đường dẫn
+
+            self.video_thread = VideoThread(source, source_type, res)
+            self.video_thread.change_pixmap_signal.connect(self.update_video)
+            self.video_thread.new_detection_signal.connect(self.add_detection_card)
+            self.video_thread.stats_signal.connect(self.update_stats)
+            self.video_thread.start()
+
+            self.start_btn.setText("Dừng lại")
+            self.start_btn.setStyleSheet("background-color: #c62828; color: white;")
+
     def closeEvent(self, event: QCloseEvent | None) -> None:
         # self.video_thread._run_flag = False
         # self.video_thread.wait()
-        self.video_thread.stop()
+        if self.video_thread is not None:
+            self.video_thread.stop()
         if event:
             event.accept()
