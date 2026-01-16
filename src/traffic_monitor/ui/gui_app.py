@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 
 from traffic_monitor.ui.threads import VideoThread, YoutubeInfoThread
 from traffic_monitor.ui.widgets import DetectionCard
@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         # Chọn độ phân giải (chỉ hiện cho YouTube)
         self.res_combo = QComboBox()
         self.res_combo.setEnabled(False)
+        self.res_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
 
         # Nút Start/Stop
         self.start_btn = QPushButton("Bắt đầu")
@@ -88,6 +89,12 @@ class MainWindow(QMainWindow):
             "background-color: #2e7d32; color: white; font-weight: bold;"
         )
 
+        # Nút Tạm dừng
+        self.pause_btn = QPushButton("Tạm dừng")
+        self.pause_btn.setEnabled(False)
+        self.pause_btn.clicked.connect(self.toggle_pause)
+
+        # Thêm vào Control Panel
         control_layout.addWidget(QLabel("Nguồn:"))
         control_layout.addWidget(self.source_combo)
         control_layout.addWidget(QLabel("Đường dẫn:"))
@@ -95,12 +102,13 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(QLabel("Độ phân giải:"))
         control_layout.addWidget(self.res_combo)
         control_layout.addWidget(self.start_btn)
+        control_layout.addWidget(self.pause_btn)
 
         # Ngang (Video | Sidebar)
         content_layout = QHBoxLayout()
 
         # Video Area
-        self.video_label = QLabel("Đang tải stream...")
+        self.video_label = QLabel("Đang chờ bắt đầu...")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(self.video_label, stretch=4)  # Chiếm 4 phần diện tích
 
@@ -171,13 +179,20 @@ class MainWindow(QMainWindow):
         self.res_combo.setEnabled(is_youtube)
 
     def toggle_detection(self) -> None:
-        """Xử lý sự kiện nhấn nút Bắt đầu / Dừng lại"""
-        if self.video_thread is not None and self.video_thread.isRunning():
+        """Xử lý sự kiện nhấn nút Bắt đầu / Dừng hẳn"""
+        if self.video_thread and self.video_thread.isRunning():
             # Nếu đang chạy thì dừng lại
             self.video_thread.stop()
+            # Xoá vùng nhớ của thread cũ ngay lập tức
+            self.video_thread.deleteLater()
+
             self.start_btn.setText("Bắt đầu")
             self.start_btn.setStyleSheet("background-color: #2e7d32; color: white;")
-            self.video_label.setText("Đã dừng.")
+
+            self.pause_btn.setEnabled(False)
+            self.pause_btn.setText("Tạm dừng")
+
+            self.status_bar.showMessage("Đã dừng - Khung hình cuối được giữ lại.")
         else:
             # Nếu đang dừng thì bắt đầu luồng mới
             source = self.source_input.text()
@@ -188,6 +203,9 @@ class MainWindow(QMainWindow):
                 return  # Cần có link hoặc đường dẫn
 
             self.progress_bar.show()
+            self.progress_bar.setValue(0)
+            self.stats_label.setText("📊 THỐNG KÊ: Đang khởi tạo...")
+
             self.video_thread = VideoThread(
                 source, source_type, res, self.stored_detector
             )
@@ -198,18 +216,34 @@ class MainWindow(QMainWindow):
             self.video_thread.stats_signal.connect(self.update_stats)
             self.video_thread.start()
 
-            self.start_btn.setText("Dừng lại")
+            self.start_btn.setText("Dừng hẳn")
             self.start_btn.setStyleSheet("background-color: #c62828; color: white;")
+            self.pause_btn.setEnabled(True)
+            self.status_bar.showMessage("Đang chuẩn bị luồng dữ liệu...")
 
-    def update_notification(self, message: str, value: int) -> None:
+    def toggle_pause(self) -> None:
+        """Xử lý sự kiện nhấn nút Tạm dừng / Tiếp tục"""
+        if self.video_thread is None:
+            return
+
+        if self.video_thread._is_paused:
+            self.video_thread.resume()
+            self.pause_btn.setText("Tạm dừng")
+            self.status_bar.showMessage("Đang tiếp tục nhận diện...")
+        else:
+            self.video_thread.pause()
+            self.pause_btn.setText("Tiếp tục")
+            self.status_bar.showMessage("Đang tạm dừng - Bạn có thể xem kỹ đoạn này.")
+
+    def update_notification(
+        self, message: str, value: int, wait_time_ms: int = 3000
+    ) -> None:
         """Cập nhật thanh tiến trình và thông báo cho người dùng"""
         self.status_bar.showMessage(message)
         self.progress_bar.setValue(value)
         if value >= 100:
-            # Tự động ẩn progress bar sau 3 giây khi hoàn thành
-            from PyQt6.QtCore import QTimer
-
-            QTimer.singleShot(3000, self.progress_bar.hide)
+            # Tự động ẩn progress bar sau n giây khi hoàn thành
+            QTimer.singleShot(wait_time_ms, self.progress_bar.hide)
 
     def save_detector(self, detector_obj: TrafficDetector) -> None:
         """Lưu trữ detector vào MainWindow để dùng lại"""
@@ -238,6 +272,7 @@ class MainWindow(QMainWindow):
     def update_resolution_list(self, resolutions: list[str]) -> None:
         """Cập nhật danh sách độ phân giải thực tế vào ComboBox"""
         self.res_combo.clear()
+        resolutions.reverse()
         self.res_combo.addItems(resolutions)
         self.res_combo.setEnabled(True)
         # Tự động chọn độ phân giải cao nhất có sẵn

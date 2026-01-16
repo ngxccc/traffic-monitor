@@ -33,6 +33,7 @@ class VideoThread(QThread):
         self.resolution = resolution
         self.detector = detector
         self._run_flag = True
+        self._is_paused = False
         self.last_tracked_ids: set[int] = set()
         # Tổng số lượng theo từng loại xe
         self.counts: dict[str, int] = {}
@@ -73,6 +74,10 @@ class VideoThread(QThread):
             self.progress_signal.emit("Bắt đầu nhận diện!", 100)
 
             while self._run_flag:
+                if self._is_paused:
+                    self.msleep(100)
+                    continue
+
                 success, frame = cap.read()
 
                 if not success:
@@ -148,6 +153,12 @@ class VideoThread(QThread):
             cap.release()
         except Exception as e:
             print(f"[!] LỖI NGHIÊM TRỌNG TRONG THREAD: {e}")
+
+    def pause(self) -> None:
+        self._is_paused = True
+
+    def resume(self) -> None:
+        self._is_paused = False
 
     def stop(self) -> None:
         self._run_flag = False
