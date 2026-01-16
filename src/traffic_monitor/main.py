@@ -1,32 +1,43 @@
-import cv2
+import logging
+import sys
+import traceback
+from types import TracebackType
 
-from traffic_monitor.detector import TrafficDetector
-from traffic_monitor.utils.youtube import cap_from_youtube
+from PyQt6.QtWidgets import QApplication
+
+from traffic_monitor.gui_app import MainWindow
+
+
+# Hàm này sẽ bắt mọi lỗi chưa được xử lý và in ra terminal
+def excepthook(
+    exc_type: type[BaseException],
+    exc_value: BaseException,
+    exc_traceback: TracebackType | None,
+) -> None:
+    print("=== ĐÃ XẢY RA LỖI HỆ THỐNG ===")
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+    sys.exit(1)
+
+
+sys.excepthook = excepthook
 
 
 def main() -> None:
-    window_name = "Traffic Monitor"
-    youtube_url = "https://www.youtube.com/watch?v=4aWufTZDLMU"
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
-    cap = cap_from_youtube(youtube_url, "1080p")
-    detector = TrafficDetector()
+    # Khởi tạo ứng dụng PyQt6
+    app = QApplication(sys.argv)
 
-    # Khởi tạo cửa sổ có khả năng co giãn, giữ nguyên khung hình
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
-    # Đặt kích thước mặc định ban đầu
-    cv2.resizeWindow(window_name, 1280, 700)
+    # Khởi tạo cửa sổ chính
+    window = MainWindow()
+    window.show()
 
-    while cap.isOpened():
-        success, frame = cap.read()
-        if not success:
-            break
+    # Chạy vòng lặp sự kiện của ứng dụng
+    # sys.exit đảm bảo chương trình kết thúc sạch sẽ khi đóng cửa sổ
+    sys.exit(app.exec())
 
-        results = detector.process_frame(frame)
-        annotated_frame = results[0].plot()
 
-        cv2.imshow(window_name, annotated_frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()

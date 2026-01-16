@@ -15,6 +15,7 @@ dependencies = [
   "ultralytics",
   "lapx",
   "yt-dlp[default]",  # cài đặt kèm yt-dlp-ejs
+  "PyQt6", # GUI
 ]
 
 [project.optional-dependencies]
