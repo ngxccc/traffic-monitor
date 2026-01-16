@@ -13,7 +13,6 @@ keywords = ["ai", "object-tracking", "yolo", "traffic"]
 
 dependencies = [
   "ultralytics",
-  "cap-from-youtube",
   "lapx",
   "yt-dlp[default]",  # cài đặt kèm yt-dlp-ejs
 ]
@@ -57,4 +56,4 @@ ignore_missing_imports = true
 implicit_reexport = true
 
 [tool.uv]
-cache-keys = [{ file = "pyproject.toml" }, { dir = "src" }]
+cache-keys = [{ file = "pyproject.toml" }, { dir = "traffic_monitor" }]
