@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from traffic_monitor.ai.detector import TrafficDetector
-from traffic_monitor.utils.youtube import cap_from_youtube
+from traffic_monitor.utils.youtube import cap_from_youtube, list_video_streams
 
 
 class VideoThread(QThread):
@@ -145,6 +145,26 @@ class VideoThread(QThread):
         self.wait()
 
 
+class YoutubeInfoThread(QThread):
+    # Gửi về danh sách độ phân giải (list các chuỗi)
+    resolutions_signal = pyqtSignal(list)
+    # Gửi về lỗi
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+
+    def run(self) -> None:
+        try:
+            # Gọi hàm lấy stream từ utils
+            _, resolutions = list_video_streams(self.url)
+            # Chuyển từ numpy array sang list để gửi về UI
+            self.resolutions_signal.emit(resolutions.tolist())
+        except Exception as e:
+            self.error_signal.emit(str(e))
+
+
 class DetectionCard(QFrame):
     """Widget hiển thị một đối tượng trong Sidebar"""
 
@@ -217,24 +237,11 @@ class MainWindow(QMainWindow):
         # Nhập đường dẫn/URL
         self.source_input = QLineEdit()
         self.source_input.setPlaceholderText("Nhập URL YouTube hoặc đường dẫn file...")
+        self.source_input.textChanged.connect(self.on_url_changed)
 
-        # Chọn độ phân giải (Mặc định ẩn, chỉ hiện cho YouTube)
+        # Chọn độ phân giải (chỉ hiện cho YouTube)
         self.res_combo = QComboBox()
-        self.res_combo.addItems(
-            [
-                "360p",
-                "480p",
-                "720p",
-                "720p60",
-                "1080p",
-                "1080p60",
-                "1440p",
-                "1440p60",
-                "2160p",
-                "2160p60",
-            ]
-        )
-        self.res_combo.setEnabled(True)
+        self.res_combo.setEnabled(False)
 
         # Nút Start/Stop
         self.start_btn = QPushButton("Bắt đầu")
@@ -349,9 +356,43 @@ class MainWindow(QMainWindow):
             self.start_btn.setText("Dừng lại")
             self.start_btn.setStyleSheet("background-color: #c62828; color: white;")
 
+    def on_url_changed(self, text: str) -> None:
+        """Kiểm tra nếu là link YouTube thì tự động lấy độ phân giải"""
+        source_type = self.source_combo.currentText().lower()
+        # Chỉ tự động lấy thông tin nếu đang chọn nguồn là YouTube và link có vẻ hợp lệ
+        if source_type == "youtube":
+            if "youtube.com" in text or "youtu.be" in text:
+                self.res_combo.clear()
+                self.res_combo.addItem("Đang lấy danh sách...")
+                self.res_combo.setEnabled(False)
+
+                # Khởi chạy luồng lấy thông tin ngầm
+                self.info_thread = YoutubeInfoThread(text)
+                self.info_thread.resolutions_signal.connect(self.update_resolution_list)
+                self.info_thread.error_signal.connect(self.on_info_error)
+                self.info_thread.start()
+            else:
+                self.res_combo.clear()
+                self.res_combo.setEnabled(False)
+
+    def update_resolution_list(self, resolutions: list[str]) -> None:
+        """Cập nhật danh sách độ phân giải thực tế vào ComboBox"""
+        self.res_combo.clear()
+        self.res_combo.addItems(resolutions)
+        self.res_combo.setEnabled(True)
+        # Tự động chọn độ phân giải cao nhất có sẵn
+        if resolutions:
+            self.res_combo.setCurrentIndex(0)
+
+    def on_info_error(self, error_msg: str) -> None:
+        """Xử lý khi không lấy được thông tin video"""
+        self.res_combo.clear()
+        self.res_combo.addItem("Lỗi lấy thông tin")
+        self.res_combo.setEnabled(False)
+        print(f"[!] Lỗi lấy thông tin YouTube: {error_msg}")
+
     def closeEvent(self, event: QCloseEvent | None) -> None:
-        # self.video_thread._run_flag = False
-        # self.video_thread.wait()
+        """Dừng luồng AI, Giải phóng Camera, Chấp nhận đóng, Tự động gọi"""
         if self.video_thread is not None:
             self.video_thread.stop()
         if event:
