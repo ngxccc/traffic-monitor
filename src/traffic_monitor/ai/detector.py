@@ -10,7 +10,6 @@ class TrafficDetector:
         self.model = YOLO(model_name, task="detect")
 
     def process_frame(self, frame: npt.NDArray[Any]) -> list[Results]:
-        results = self.model.track(
+        return self.model.track(
             frame, persist=True, tracker="bytetrack.yaml", verbose=False
         )
-        return results

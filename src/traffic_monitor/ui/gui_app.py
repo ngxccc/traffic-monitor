@@ -1,220 +1,27 @@
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-import cv2
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt
+
+from traffic_monitor.ui.threads import VideoThread, YoutubeInfoThread
+from traffic_monitor.ui.widgets import DetectionCard
 
 if TYPE_CHECKING:
     from traffic_monitor.ai.detector import TrafficDetector
 from PyQt6.QtGui import QCloseEvent, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QComboBox,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QProgressBar,
     QPushButton,
     QScrollArea,
+    QStatusBar,
     QVBoxLayout,
     QWidget,
 )
-
-from traffic_monitor.utils.youtube import cap_from_youtube, list_video_streams
-
-
-class VideoThread(QThread):
-    # Gửi thông tin đã xử lý về UI
-    change_pixmap_signal = pyqtSignal(QImage)
-    # Gửi dictionary chứa: ảnh cắt, tên loại xe, thời gian, độ tin cậy
-    new_detection_signal = pyqtSignal(dict)
-    # Gửi data thống kê: {"car": 10, "bike": 5}
-    stats_signal = pyqtSignal(dict)
-    # Gửi lại đối tượng detector sau khi nạp thành công
-    detector_ready_signal = pyqtSignal(object)
-
-    def __init__(
-        self,
-        source: str,
-        source_type: str,
-        resolution: str,
-        detector: TrafficDetector | None = None,
-    ):
-        super().__init__()
-        self.source = source
-        self.source_type = source_type.lower()
-        self.resolution = resolution
-        self.detector = detector
-        self._run_flag = True
-        self.last_tracked_ids: set[int] = set()
-        # Tổng số lượng theo từng loại xe
-        self.counts: dict[str, int] = {}
-
-    def run(self) -> None:
-        try:
-            if self.detector is None:
-                # Conditional Import giúp tối ưu việc import và hiệu năng
-                from traffic_monitor.ai.detector import TrafficDetector
-
-                print("[*] Đang nạp Model lần đầu tiên...")
-                self.detector = TrafficDetector()
-                self.detector_ready_signal.emit(self.detector)
-            else:
-                print("[*] Sử dụng Model đã nạp sẵn.")
-
-            cap = None
-
-            if self.source_type == "youtube":
-                cap = cap_from_youtube(self.source, self.resolution)
-            elif self.source_type == "webcam":
-                camera_id = int(self.source) if self.source.isdigit() else 0
-                cap = cv2.VideoCapture(camera_id)
-            elif self.source_type in ["local file", "link mp4", "rtsp camera"]:
-                # File local, link .mp4 trực tiếp, hoặc RTSP camera
-                cap = cv2.VideoCapture(self.source)
-            else:
-                raise ValueError(f"Nguồn '{self.source_type}' không được hỗ trợ.")
-
-            if not cap.isOpened():
-                print(f"[-] LỖI: Không thể mở nguồn {self.source_type}")
-                return
-
-            while self._run_flag:
-                success, frame = cap.read()
-
-                if not success:
-                    break
-
-                # Xử lý frame bằng YOLO
-                results = self.detector.process_frame(frame)
-                if not results:
-                    continue
-
-                res = results[0]
-                annotated_frame = res.plot()
-
-                if res.boxes is not None and res.boxes.id is not None:
-                    ids_raw = res.boxes.id
-
-                    # Kiểm tra nếu là PyTorch Tensor (thường xảy ra khi dùng GPU)
-                    import torch
-
-                    if isinstance(ids_raw, torch.Tensor):
-                        ids = ids_raw.cpu().numpy().astype(int).tolist()
-                    else:
-                        # Nếu đã là NumPy array (thường xảy ra khi chạy CPU)
-                        ids = ids_raw.astype(int).tolist()
-
-                    for i, obj_id in enumerate(ids):
-                        if obj_id not in self.last_tracked_ids:
-                            self.last_tracked_ids.add(obj_id)
-
-                            # Đếm xe
-                            label = res.names[int(res.boxes[i].cls[0])]
-                            self.counts[label] = self.counts.get(label, 0) + 1
-                            # Gửi data mới cho UI
-                            self.stats_signal.emit(self.counts)
-
-                            # Giới hạn kích thước bộ nhớ ID
-                            if len(self.last_tracked_ids) > 100:
-                                self.last_tracked_ids.clear()
-
-                            try:
-                                # Lấy thông tin box
-                                box = res.boxes[i]
-                                x1, y1, x2, y2 = box.xyxy[0].int().cpu().tolist()
-                                label = res.names[int(box.cls[0])]
-                                conf = float(box.conf[0])
-
-                                # Cắt ảnh đối tượng
-                                crop = frame[max(0, y1) : y2, max(0, x1) : x2]
-                                if crop.size > 0:
-                                    self.new_detection_signal.emit(
-                                        {
-                                            "id": obj_id,
-                                            "label": label,
-                                            "conf": conf,
-                                            "image": crop,
-                                            "time": datetime.now().strftime("%H:%M:%S"),
-                                        }
-                                    )
-                            except Exception:
-                                pass
-
-                # Chuyển đổi BGR (OpenCV) sang RGB (PyQt)
-                rgb_image = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-                # Chiều cao, Chiều rộng, Số kênh
-                h, w, ch = rgb_image.shape
-                #  Số byte trên mỗi dòng
-                bytes_per_line = rgb_image.strides[0]
-                qt_image = QImage(
-                    rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888
-                ).copy()
-                self.change_pixmap_signal.emit(qt_image)
-
-            cap.release()
-        except Exception as e:
-            print(f"[!] LỖI NGHIÊM TRỌNG TRONG THREAD: {e}")
-
-    def stop(self) -> None:
-        self._run_flag = False
-        self.wait()
-
-
-class YoutubeInfoThread(QThread):
-    # Gửi về danh sách độ phân giải (list các chuỗi)
-    resolutions_signal = pyqtSignal(list)
-    # Gửi về lỗi
-    error_signal = pyqtSignal(str)
-
-    def __init__(self, url: str):
-        super().__init__()
-        self.url = url
-
-    def run(self) -> None:
-        try:
-            # Gọi hàm lấy stream từ utils
-            _, resolutions = list_video_streams(self.url)
-            # Chuyển từ numpy array sang list để gửi về UI
-            self.resolutions_signal.emit(resolutions.tolist())
-        except Exception as e:
-            self.error_signal.emit(str(e))
-
-
-class DetectionCard(QFrame):
-    """Widget hiển thị một đối tượng trong Sidebar"""
-
-    def __init__(self, data: dict[str, Any]) -> None:
-        super().__init__()
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setStyleSheet(
-            "background-color: #2c2c2c; border-radius: 5px; margin: 2px; color: white;"
-        )
-        layout = QHBoxLayout(self)
-
-        # Ảnh cắt
-        img_label = QLabel()
-        h, w, ch = data["image"].shape
-        qimg = QImage(
-            cv2.cvtColor(data["image"], cv2.COLOR_BGR2RGB).data,
-            w,
-            h,
-            w * ch,
-            QImage.Format.Format_RGB888,
-        ).copy()
-        img_label.setPixmap(
-            QPixmap.fromImage(qimg).scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio)
-        )
-
-        # Thông tin văn bản
-        info_layout = QVBoxLayout()
-        info_layout.addWidget(QLabel(f"ID: {data['id']} - {data['label']}"))
-        info_layout.addWidget(QLabel(f"Conf: {data['conf']:.2f}"))
-        info_layout.addWidget(QLabel(f"Time: {data['time']}"))
-
-        layout.addWidget(img_label)
-        layout.addLayout(info_layout)
 
 
 class MainWindow(QMainWindow):
@@ -228,6 +35,19 @@ class MainWindow(QMainWindow):
 
         # Layout chính
         main_vbox = QVBoxLayout()
+
+        # Progress Bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet(
+            "height: 10px; border-radius:5px; text-align: right;"
+        )
+        self.progress_bar.setValue(0)
+        self.progress_bar.hide()
+
+        # Notification Area
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("Sẵn sàng.")
 
         # Dashboard Bar
         self.stats_widget = QWidget()
@@ -295,8 +115,10 @@ class MainWindow(QMainWindow):
         self.sidebar_scroll.setWidget(self.sidebar_container)
         content_layout.addWidget(self.sidebar_scroll, stretch=1)
 
+        # Thêm vào main layout
         main_vbox.addWidget(self.stats_widget)
         main_vbox.addWidget(self.control_group)
+        main_vbox.addWidget(self.progress_bar)
         main_vbox.addLayout(content_layout)
 
         central_widget = QWidget()
@@ -365,9 +187,11 @@ class MainWindow(QMainWindow):
             if not source and source_type.lower() != "webcam":
                 return  # Cần có link hoặc đường dẫn
 
+            self.progress_bar.show()
             self.video_thread = VideoThread(
                 source, source_type, res, self.stored_detector
             )
+            self.video_thread.progress_signal.connect(self.update_notification)
             self.video_thread.detector_ready_signal.connect(self.save_detector)
             self.video_thread.change_pixmap_signal.connect(self.update_video)
             self.video_thread.new_detection_signal.connect(self.add_detection_card)
@@ -376,6 +200,16 @@ class MainWindow(QMainWindow):
 
             self.start_btn.setText("Dừng lại")
             self.start_btn.setStyleSheet("background-color: #c62828; color: white;")
+
+    def update_notification(self, message: str, value: int) -> None:
+        """Cập nhật thanh tiến trình và thông báo cho người dùng"""
+        self.status_bar.showMessage(message)
+        self.progress_bar.setValue(value)
+        if value >= 100:
+            # Tự động ẩn progress bar sau 3 giây khi hoàn thành
+            from PyQt6.QtCore import QTimer
+
+            QTimer.singleShot(3000, self.progress_bar.hide)
 
     def save_detector(self, detector_obj: TrafficDetector) -> None:
         """Lưu trữ detector vào MainWindow để dùng lại"""
