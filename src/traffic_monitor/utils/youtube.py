@@ -83,12 +83,7 @@ def list_video_streams(
             formats = info.get("formats", [])
 
             def is_valid(f: dict[str, Any]) -> bool:
-                return (
-                    f.get("vcodec") != "none"
-                    # and f.get("acodec")
-                    # != "none"  # Không lấy âm thanh gì > 360p không hỗ trợ
-                    and f.get("format_note") in VALID_RESOLUTIONS
-                )
+                return f.get("vcodec") == "vp9"
 
             streams = [VideoStream.from_dict(f) for f in formats[::-1] if is_valid(f)]
 

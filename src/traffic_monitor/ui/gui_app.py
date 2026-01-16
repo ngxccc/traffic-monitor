@@ -139,17 +139,6 @@ class MainWindow(QMainWindow):
         display_text = "  |  ".join(stat_items)
         self.stats_label.setText(f"📊 THỐNG KÊ: {display_text}")
 
-    def update_image(self, qt_image: QImage) -> None:
-        # Cập nhật khung hình lên giao diện
-        pixmap = QPixmap.fromImage(qt_image)
-        # Tự động co giãn ảnh theo kích thước cửa sổ nhưng giữ tỉ lệ
-        scaled_pixmap = pixmap.scaled(
-            self.video_label.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.video_label.setPixmap(scaled_pixmap)
-
     def update_video(self, qt_image: QImage) -> None:
         pixmap = QPixmap.fromImage(qt_image)
         self.video_label.setPixmap(
@@ -183,8 +172,8 @@ class MainWindow(QMainWindow):
         if self.video_thread and self.video_thread.isRunning():
             # Nếu đang chạy thì dừng lại
             self.video_thread.stop()
-            # Xoá vùng nhớ của thread cũ ngay lập tức
-            self.video_thread.deleteLater()
+            self.video_thread.deleteLater()  # Xoá vùng nhớ của thread cũ ngay lập tức
+            self.video_thread = None  # Set None tránh trỏ đến vùng nhớ không tồn tại
 
             self.start_btn.setText("Bắt đầu")
             self.start_btn.setStyleSheet("background-color: #2e7d32; color: white;")
@@ -209,6 +198,7 @@ class MainWindow(QMainWindow):
             self.video_thread = VideoThread(
                 source, source_type, res, self.stored_detector
             )
+
             self.video_thread.progress_signal.connect(self.update_notification)
             self.video_thread.detector_ready_signal.connect(self.save_detector)
             self.video_thread.change_pixmap_signal.connect(self.update_video)
