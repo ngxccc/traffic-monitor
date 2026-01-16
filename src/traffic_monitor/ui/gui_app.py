@@ -39,15 +39,29 @@ class MainWindow(QMainWindow):
         # Progress Bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet(
-            "height: 10px; border-radius:5px; text-align: right;"
+            """
+            QProgressBar {
+                background-color: #E0E0E0;
+                height: 10px;
+                border-radius: 5px;
+                text-align: center;
+                color: black;
+            }
+            QProgressBar::chunk {
+                border-radius: 5px;
+                background-color: #3498db;
+            }
+            """
         )
-        self.progress_bar.setValue(0)
-        self.progress_bar.hide()
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setValue(50)
+        self.progress_bar.show()
 
         # Notification Area
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Sẵn sàng.")
+        self.status_bar.setStyleSheet("font-size: 14px;")
 
         # Dashboard Bar
         self.stats_widget = QWidget()
@@ -169,11 +183,27 @@ class MainWindow(QMainWindow):
 
     def toggle_detection(self) -> None:
         """Xử lý sự kiện nhấn nút Bắt đầu / Dừng hẳn"""
+        # Nếu đang chạy thì dừng lại
         if self.video_thread and self.video_thread.isRunning():
-            # Nếu đang chạy thì dừng lại
+            # Ngăn frame nào lọt vào sau khi xóa
+            self.video_thread.change_pixmap_signal.disconnect()
             self.video_thread.stop()
             self.video_thread.deleteLater()  # Xoá vùng nhớ của thread cũ ngay lập tức
             self.video_thread = None  # Set None tránh trỏ đến vùng nhớ không tồn tại
+
+            self.video_label.clear()
+            self.video_label.setText("⏹️ HỆ THỐNG ĐÃ DỪNG")
+            self.video_label.setStyleSheet(
+                "color: #FF5555; font-weight: bold; font-size: 18px;"
+            )
+
+            # Clear sidebar
+            while self.sidebar_layout.count() > 0:
+                item = self.sidebar_layout.takeAt(0)
+                if item:
+                    widget = item.widget()
+                    if widget is not None:
+                        widget.deleteLater()
 
             self.start_btn.setText("Bắt đầu")
             self.start_btn.setStyleSheet("background-color: #2e7d32; color: white;")
@@ -181,7 +211,7 @@ class MainWindow(QMainWindow):
             self.pause_btn.setEnabled(False)
             self.pause_btn.setText("Tạm dừng")
 
-            self.status_bar.showMessage("Đã dừng - Khung hình cuối được giữ lại.")
+            self.status_bar.showMessage("Đã dừng hệ thống và dọn dẹp sidebar.")
         else:
             # Nếu đang dừng thì bắt đầu luồng mới
             source = self.source_input.text()
