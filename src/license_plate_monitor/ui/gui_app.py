@@ -2,11 +2,11 @@ from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import Qt, QTimer
 
-from traffic_monitor.ui.threads import VideoThread, YoutubeInfoThread
-from traffic_monitor.ui.widgets import DetectionCard
+from license_plate_monitor.ui.threads import VideoThread, YoutubeInfoThread
+from license_plate_monitor.ui.widgets import DetectionCard
 
 if TYPE_CHECKING:
-    from traffic_monitor.ai.detector import TrafficDetector
+    from license_plate_monitor.ai.detector import LicensePlateDetector
 from PyQt6.QtGui import QCloseEvent, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -27,11 +27,11 @@ from PyQt6.QtWidgets import (
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Hệ thống giám sát Giao thông")
+        self.setWindowTitle("License Plate Monitor System")
         self.resize(1300, 800)
         self.setStyleSheet("background-color: #1a1a1a;")
         self.video_thread: VideoThread | None = None
-        self.stored_detector: TrafficDetector | None = None
+        self.stored_detector: LicensePlateDetector | None = None
 
         # Layout chính
         main_vbox = QVBoxLayout()
@@ -265,7 +265,7 @@ class MainWindow(QMainWindow):
             # Tự động ẩn progress bar sau n giây khi hoàn thành
             QTimer.singleShot(wait_time_ms, self.progress_bar.hide)
 
-    def save_detector(self, detector_obj: TrafficDetector) -> None:
+    def save_detector(self, detector_obj: LicensePlateDetector) -> None:
         """Lưu trữ detector vào MainWindow để dùng lại"""
         self.stored_detector = detector_obj
         print("[+] Đã lưu trữ Model vào bộ nhớ hệ thống.")

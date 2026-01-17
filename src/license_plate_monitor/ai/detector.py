@@ -5,7 +5,7 @@ from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
 
-class TrafficDetector:
+class LicensePlateDetector:
     def __init__(self, model_name: str = r"models\yolo11n_int8_openvino_model"):
         self.model = YOLO(model_name, task="detect")
 

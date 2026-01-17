@@ -1,14 +1,15 @@
-# Traffic Monitor
+# License Plate Monitor
 
-This is a **traffic monitoring application** built with **Python**. It uses **Computer Vision** and **Deep Learning** to detect and track vehicles in real-time. The application streams video directly from **YouTube** and shows the results on a **PyQt6 GUI**.
+This is a **license plate monitoring application**. It is built with **Python**. The app uses **Computer Vision** and **Deep Learning** to find cars and read their license plates in real-time. It can process video from **YouTube** directly. The app shows results on a simple **PyQt6 GUI**.
 
 ## 🚀 Features
 
-- **Object Detection:** Uses **YOLO11** to detect vehicles with high accuracy.
-- **Object Tracking:** Tracks objects smoothly using **ByteTrack**.
-- **Live Streaming:** Processes video streams directly from **YouTube** URLs.
-- **Performance:** Optimized for **Intel CPUs** using **OpenVINO** (INT8 quantization).
-- **GUI:** User-friendly interface built with **PyQt6**.
+- **Vehicle Detection:** Uses **YOLO26** model to find and track vehicles.
+- **Object Tracking:** Follows vehicles smoothly with **ByteTrack** algorithm.
+- **License Plate Recognition:** Can detect and read license plates automatically.
+- **YouTube Streaming:** Works with video from **YouTube URLs** without downloading.
+- **Fast Performance:** Optimized for **Intel CPUs** using **OpenVINO** (INT8 quantization).
+- **Simple GUI:** Easy-to-use interface built with **PyQt6**.
 
 ## 🛠️ Installation
 
@@ -24,8 +25,8 @@ We recommend using **uv** for extremely fast setup and package management.
 1. **Clone the repository:**
 
    ```bash
-   git clone [https://github.com/ngxccc/traffic-monitor.git](https://github.com/ngxccc/traffic-monitor.git)
-   cd traffic-monitor
+   git clone [https://github.com/ngxccc/license-plate-monitor.git](https://github.com/ngxccc/license-plate-monitor.git)
+   cd license-plate-monitor
    ```
 
 2. **Install dependencies:**

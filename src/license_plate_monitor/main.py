@@ -5,7 +5,8 @@ from types import TracebackType
 
 from PyQt6.QtWidgets import QApplication
 
-from traffic_monitor.ui.gui_app import MainWindow
+from license_plate_monitor.ui.gui_app import MainWindow
+
 
 
 # Hàm này sẽ bắt mọi lỗi chưa được xử lý và in ra terminal

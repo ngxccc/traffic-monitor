@@ -4,8 +4,8 @@ import cv2
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QImage
 
-from traffic_monitor.ai.detector import TrafficDetector
-from traffic_monitor.utils.youtube import cap_from_youtube, list_video_streams
+from license_plate_monitor.ai.detector import LicensePlateDetector
+from license_plate_monitor.utils.youtube import cap_from_youtube, list_video_streams
 
 
 class VideoThread(QThread):
@@ -25,7 +25,7 @@ class VideoThread(QThread):
         source: str,
         source_type: str,
         resolution: str,
-        detector: TrafficDetector | None = None,
+        detector: LicensePlateDetector | None = None,
     ):
         super().__init__()
         self.source = source
@@ -42,11 +42,11 @@ class VideoThread(QThread):
         try:
             if self.detector is None:
                 # Conditional Import giúp tối ưu việc import và hiệu năng
-                from traffic_monitor.ai.detector import TrafficDetector
+                from license_plate_monitor.ai.detector import LicensePlateDetector
 
                 print("[*] Đang nạp Model lần đầu tiên...")
                 self.progress_signal.emit("Đang nạp mô hình AI...", 20)
-                self.detector = TrafficDetector()
+                self.detector = LicensePlateDetector()
                 self.progress_signal.emit("Nạp mô hình thành công!", 100)
                 self.detector_ready_signal.emit(self.detector)
             else:
