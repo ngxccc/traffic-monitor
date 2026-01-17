@@ -6,6 +6,7 @@ runs/
 models/
 data/
 dataset/
+detections/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 
 import cv2
@@ -29,6 +30,7 @@ class VideoThread(QThread):
         conf_threshold: float = 0.5,
         show_labels: bool = True,
         show_boxes: bool = True,
+        auto_save: bool = False,
     ):
         super().__init__()
         self.source = source
@@ -42,6 +44,11 @@ class VideoThread(QThread):
         self.conf_threshold = conf_threshold
         self.show_labels = show_labels
         self.show_boxes = show_boxes
+        self.auto_save = auto_save
+        self.save_dir = "detections"
+
+        if self.auto_save and not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
 
     def _initialize_detector(self) -> None:
         """Helper để nạp mô hình AI"""
@@ -118,6 +125,19 @@ class VideoThread(QThread):
 
                     # Gửi data về UI (bổ sung thêm timestamp tại thread)
                     det["time"] = datetime.now().strftime("%H:%M:%S")
+
+                    if self.auto_save:
+                        try:
+                            # Tạo tên file: label_id_timestamp.png
+                            timestamp = datetime.now().strftime("%H%M%S_%f")[:-3]
+                            filename = f"{det['label']}_{det['id']}_{timestamp}.png"
+                            filepath = os.path.join(self.save_dir, filename)
+
+                            # Nếu ảnh là RGB cần chuyển lại BGR
+                            # cv2.cvtColor(det["image"], cv2.COLOR_RGB2BGR
+                            cv2.imwrite(filepath, det["image"])
+                        except Exception as e:
+                            print(f"Lỗi khi lưu ảnh: {e}")
                     self.new_detection_signal.emit(det)
 
                 # Chuyển đổi BGR (OpenCV) sang RGB (PyQt)

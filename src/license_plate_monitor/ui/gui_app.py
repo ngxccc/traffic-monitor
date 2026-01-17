@@ -86,6 +86,9 @@ class MainWindow(QMainWindow):
         self.source_combo.addItems(
             ["YouTube", "Webcam", "Local File | Link MP4", "RTSP camera"]
         )
+        self.source_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
         self.source_combo.currentTextChanged.connect(self.on_source_type_changed)
 
         # Nhập đường dẫn/URL
@@ -114,8 +117,13 @@ class MainWindow(QMainWindow):
         self.show_boxes_cb.setChecked(True)
         self.show_boxes_cb.setStyleSheet("color: white;")
 
+        self.auto_save_cb = QCheckBox("Tự động lưu")
+        self.auto_save_cb.setToolTip("Lưu ảnh cắt biển số vào thư mục 'detections'")
+        self.auto_save_cb.setStyleSheet("color: white;")
+
         control_layout.addWidget(self.show_labels_cb)
         control_layout.addWidget(self.show_boxes_cb)
+        control_layout.addWidget(self.auto_save_cb)
 
         # Nút Start/Stop
         self.start_btn = QPushButton("Bắt đầu")
@@ -271,6 +279,7 @@ class MainWindow(QMainWindow):
             conf_threshold = self.conf_spin.value()
             show_labels = self.show_labels_cb.isChecked()
             show_boxes = self.show_boxes_cb.isChecked()
+            auto_save = self.auto_save_cb.isChecked()
 
             self.video_thread = VideoThread(
                 source,
@@ -280,6 +289,7 @@ class MainWindow(QMainWindow):
                 conf_threshold,
                 show_labels,
                 show_boxes,
+                auto_save,
             )
 
             self.video_thread.progress_signal.connect(self.update_notification)
