@@ -125,18 +125,6 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Sẵn sàng.")
         self.status_bar.setStyleSheet("font-size: 14px;")
 
-        # Dashboard Bar
-        # self.stats_widget = QWidget()
-        # self.stats_widget.setStyleSheet(
-        #     "background-color: #252525; border-bottom: 1px solid #444;"
-        # )
-        # self.stats_layout = QHBoxLayout(self.stats_widget)
-        # self.stats_label = QLabel("📊 THỐNG KÊ: Đang chờ dữ liệu...")
-        # self.stats_label.setStyleSheet(
-        #     "color: #00FF00; font-weight: bold; font-size: 16px;"
-        # )
-        # self.stats_layout.addWidget(self.stats_label)
-
         self.source_tab.combo.currentTextChanged.connect(self.on_source_type_changed)
         self.source_tab.input.textChanged.connect(self.on_url_changed)
 
@@ -160,7 +148,6 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.sidebar_scroll, stretch=1)
 
         # Thêm vào main layout
-        # main_vbox.addWidget(self.stats_widget)
         main_vbox.addWidget(self.action_group)
         main_vbox.addWidget(self.progress_bar)
         main_vbox.addLayout(content_layout)
