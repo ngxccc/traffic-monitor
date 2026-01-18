@@ -3,24 +3,21 @@ from typing import TYPE_CHECKING, Any
 from PyQt6.QtCore import Qt, QTimer
 
 from license_plate_monitor.ui.threads import VideoThread, YoutubeInfoThread
-from license_plate_monitor.ui.widgets import DetectionCard
+from license_plate_monitor.ui.widgets import AISettingTab, DetectionCard, SourceTab
 
 if TYPE_CHECKING:
     from license_plate_monitor.ai.detector import LicensePlateDetector
 from PyQt6.QtGui import QCloseEvent, QImage, QPixmap
 from PyQt6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QProgressBar,
     QPushButton,
     QScrollArea,
     QStatusBar,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -34,6 +31,38 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("background-color: #1a1a1a;")
         self.video_thread: VideoThread | None = None
         self.stored_detector: LicensePlateDetector | None = None
+
+        self.tabs = QTabWidget()
+        self.source_tab = SourceTab()
+        self.ai_tab = AISettingTab()
+
+        self.tabs.addTab(self.source_tab, "📡 Nguồn Video")
+        self.tabs.addTab(self.ai_tab, "🤖 Cấu hình AI")
+
+        self.action_group = QGroupBox("Thao tác nhanh")
+        action_layout = QHBoxLayout(self.action_group)
+
+        # Nút Start/Stop
+        self.start_btn = QPushButton("Bắt đầu")
+        self.start_btn.clicked.connect(self.toggle_detection)
+        self.start_btn.setStyleSheet(
+            "background-color: #2e7d32; color: white; font-weight: bold;"
+        )
+
+        # Nút Tạm dừng
+        self.pause_btn = QPushButton("Tạm dừng")
+        self.pause_btn.setEnabled(False)
+        self.pause_btn.clicked.connect(self.toggle_pause)
+
+        # Clear History Button
+        self.clear_sidebar_btn = QPushButton("Xóa lịch sử")
+        self.clear_sidebar_btn.setStyleSheet("background-color: #444; color: white;")
+        self.clear_sidebar_btn.setEnabled(False)
+        self.clear_sidebar_btn.clicked.connect(self.clear_sidebar)
+
+        action_layout.addWidget(self.start_btn)
+        action_layout.addWidget(self.pause_btn)
+        action_layout.addWidget(self.clear_sidebar_btn)
 
         # Layout chính
         main_vbox = QVBoxLayout()
@@ -77,75 +106,8 @@ class MainWindow(QMainWindow):
         )
         self.stats_layout.addWidget(self.stats_label)
 
-        # Control Panel
-        self.control_group = QGroupBox("Cấu hình nguồn vào")
-        control_layout = QHBoxLayout(self.control_group)
-
-        # Chọn loại nguồn
-        self.source_combo = QComboBox()
-        self.source_combo.addItems(
-            ["YouTube", "Webcam", "Local File | Link MP4", "RTSP camera"]
-        )
-        self.source_combo.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy.AdjustToContents
-        )
-        self.source_combo.currentTextChanged.connect(self.on_source_type_changed)
-
-        # Nhập đường dẫn/URL
-        self.source_input = QLineEdit()
-        self.source_input.setPlaceholderText("Nhập URL YouTube hoặc đường dẫn file...")
-        self.source_input.textChanged.connect(self.on_url_changed)
-
-        # Chọn độ phân giải (chỉ hiện cho YouTube)
-        self.res_combo = QComboBox()
-        self.res_combo.setEnabled(False)
-        self.res_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-
-        control_layout.addWidget(QLabel("Độ tin cậy:"))
-        self.conf_spin = QDoubleSpinBox()
-        self.conf_spin.setRange(0.1, 1.0)
-        self.conf_spin.setSingleStep(0.05)
-        self.conf_spin.setValue(0.5)
-        self.conf_spin.setFixedWidth(80)
-        control_layout.addWidget(self.conf_spin)
-
-        self.show_labels_cb = QCheckBox("Hiện nhãn")
-        self.show_labels_cb.setChecked(True)
-        self.show_labels_cb.setStyleSheet("color: white;")
-
-        self.show_boxes_cb = QCheckBox("Hiện khung")
-        self.show_boxes_cb.setChecked(True)
-        self.show_boxes_cb.setStyleSheet("color: white;")
-
-        self.auto_save_cb = QCheckBox("Tự động lưu")
-        self.auto_save_cb.setToolTip("Lưu ảnh cắt biển số vào thư mục 'detections'")
-        self.auto_save_cb.setStyleSheet("color: white;")
-
-        control_layout.addWidget(self.show_labels_cb)
-        control_layout.addWidget(self.show_boxes_cb)
-        control_layout.addWidget(self.auto_save_cb)
-
-        # Nút Start/Stop
-        self.start_btn = QPushButton("Bắt đầu")
-        self.start_btn.clicked.connect(self.toggle_detection)
-        self.start_btn.setStyleSheet(
-            "background-color: #2e7d32; color: white; font-weight: bold;"
-        )
-
-        # Nút Tạm dừng
-        self.pause_btn = QPushButton("Tạm dừng")
-        self.pause_btn.setEnabled(False)
-        self.pause_btn.clicked.connect(self.toggle_pause)
-
-        # Thêm vào Control Panel
-        control_layout.addWidget(QLabel("Nguồn:"))
-        control_layout.addWidget(self.source_combo)
-        control_layout.addWidget(QLabel("Đường dẫn:"))
-        control_layout.addWidget(self.source_input)
-        control_layout.addWidget(QLabel("Độ phân giải:"))
-        control_layout.addWidget(self.res_combo)
-        control_layout.addWidget(self.start_btn)
-        control_layout.addWidget(self.pause_btn)
+        self.source_tab.combo.currentTextChanged.connect(self.on_source_type_changed)
+        self.source_tab.input.textChanged.connect(self.on_url_changed)
 
         # Ngang (Video | Sidebar)
         content_layout = QHBoxLayout()
@@ -154,13 +116,6 @@ class MainWindow(QMainWindow):
         self.video_label = QLabel("Đang chờ bắt đầu...")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(self.video_label, stretch=4)  # Chiếm 4 phần diện tích
-
-        # Clear History Button
-        self.clear_sidebar_btn = QPushButton("Xóa lịch sử")
-        self.clear_sidebar_btn.setStyleSheet(
-            "background-color: #444; color: white; margin: 5px;"
-        )
-        self.clear_sidebar_btn.clicked.connect(self.clear_sidebar)
 
         # Sidebar Area
         self.sidebar_scroll = QScrollArea()
@@ -175,7 +130,8 @@ class MainWindow(QMainWindow):
 
         # Thêm vào main layout
         main_vbox.addWidget(self.stats_widget)
-        main_vbox.addWidget(self.control_group)
+        main_vbox.addWidget(self.tabs)
+        main_vbox.addWidget(self.action_group)
         main_vbox.addWidget(self.progress_bar)
         main_vbox.addLayout(content_layout)
 
@@ -230,7 +186,7 @@ class MainWindow(QMainWindow):
     def on_source_type_changed(self, text: str) -> None:
         """Tự động ẩn/hiện độ phân giải tùy theo nguồn"""
         is_youtube = text.lower() == "youtube"
-        self.res_combo.setEnabled(is_youtube)
+        self.source_tab.combo.setEnabled(is_youtube)
 
     def toggle_detection(self) -> None:
         """Xử lý sự kiện nhấn nút Bắt đầu / Dừng hẳn"""
@@ -265,9 +221,9 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("Đã dừng hệ thống và dọn dẹp sidebar.")
         else:
             # Nếu đang dừng thì bắt đầu luồng mới
-            source = self.source_input.text()
-            source_type = self.source_combo.currentText()
-            res = self.res_combo.currentText()
+            source = self.source_tab.input.text()
+            source_type = self.source_tab.combo.currentText()
+            res = self.source_tab.res_combo.currentText()
 
             if not source and source_type.lower() != "webcam":
                 return  # Cần có link hoặc đường dẫn
@@ -276,10 +232,10 @@ class MainWindow(QMainWindow):
             self.progress_bar.setValue(0)
             self.stats_label.setText("📊 THỐNG KÊ: Đang khởi tạo...")
 
-            conf_threshold = self.conf_spin.value()
-            show_labels = self.show_labels_cb.isChecked()
-            show_boxes = self.show_boxes_cb.isChecked()
-            auto_save = self.auto_save_cb.isChecked()
+            conf_threshold = self.ai_tab.conf_spin.value()
+            show_labels = self.ai_tab.show_labels.isChecked()
+            show_boxes = self.ai_tab.show_boxes.isChecked()
+            auto_save = self.ai_tab.auto_save.isChecked()
 
             self.video_thread = VideoThread(
                 source,
@@ -335,13 +291,13 @@ class MainWindow(QMainWindow):
 
     def on_url_changed(self, text: str) -> None:
         """Kiểm tra nếu là link YouTube thì tự động lấy độ phân giải"""
-        source_type = self.source_combo.currentText().lower()
+        source_type = self.source_tab.combo.currentText().lower()
         # Chỉ tự động lấy thông tin nếu đang chọn nguồn là YouTube và link có vẻ hợp lệ
         if source_type == "youtube":
             if "youtube.com" in text or "youtu.be" in text:
-                self.res_combo.clear()
-                self.res_combo.addItem("Đang lấy danh sách...")
-                self.res_combo.setEnabled(False)
+                self.source_tab.res_combo.clear()
+                self.source_tab.res_combo.addItem("Đang lấy danh sách...")
+                self.source_tab.res_combo.setEnabled(False)
 
                 # Khởi chạy luồng lấy thông tin ngầm
                 self.info_thread = YoutubeInfoThread(text)
@@ -349,24 +305,24 @@ class MainWindow(QMainWindow):
                 self.info_thread.error_signal.connect(self.on_info_error)
                 self.info_thread.start()
             else:
-                self.res_combo.clear()
-                self.res_combo.setEnabled(False)
+                self.source_tab.res_combo.clear()
+                self.source_tab.res_combo.setEnabled(False)
 
     def update_resolution_list(self, resolutions: list[str]) -> None:
         """Cập nhật danh sách độ phân giải thực tế vào ComboBox"""
-        self.res_combo.clear()
+        self.source_tab.res_combo.clear()
         resolutions.reverse()
-        self.res_combo.addItems(resolutions)
-        self.res_combo.setEnabled(True)
+        self.source_tab.res_combo.addItems(resolutions)
+        self.source_tab.res_combo.setEnabled(True)
         # Tự động chọn độ phân giải cao nhất có sẵn
         if resolutions:
-            self.res_combo.setCurrentIndex(0)
+            self.source_tab.res_combo.setCurrentIndex(0)
 
     def on_info_error(self, error_msg: str) -> None:
         """Xử lý khi không lấy được thông tin video"""
-        self.res_combo.clear()
-        self.res_combo.addItem("Lỗi lấy thông tin")
-        self.res_combo.setEnabled(False)
+        self.source_tab.res_combo.clear()
+        self.source_tab.res_combo.addItem("Lỗi lấy thông tin")
+        self.source_tab.res_combo.setEnabled(False)
         print(f"[!] Lỗi lấy thông tin YouTube: {error_msg}")
 
     def closeEvent(self, event: QCloseEvent | None) -> None:
