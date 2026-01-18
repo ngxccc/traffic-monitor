@@ -1,11 +1,11 @@
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from PyQt6.QtCore import Qt, QTimer
 
 from license_plate_monitor.ui.threads import VideoThread, YoutubeInfoThread
 from license_plate_monitor.ui.widgets import (
     AISettingTab,
-    DetectionCard,
+    DetectionSidebar,
     SettingsDock,
     SourceTab,
     StatsDock,
@@ -23,7 +23,6 @@ from PyQt6.QtWidgets import (
     QMenuBar,
     QProgressBar,
     QPushButton,
-    QScrollArea,
     QStatusBar,
     QTabWidget,
     QVBoxLayout,
@@ -34,71 +33,49 @@ from PyQt6.QtWidgets import (
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self._init_ui_settings()
+        self._create_widgets()
+        self._setup_layouts()
+        self._setup_docks_and_menus()
+        self._connect_signals()
+
+        # Nút Start/Stop
+        self.start_btn.setStyleSheet(
+            "background-color: #2e7d32; color: white; font-weight: bold;"
+        )
+
+        # Nút Tạm dừng
+        self.pause_btn.setEnabled(False)
+
+        # Clear History Button
+        self.clear_btn.setStyleSheet("background-color: #444; color: white;")
+        self.clear_btn.setEnabled(False)
+
+    def _init_ui_settings(self) -> None:
         self.setWindowTitle("License Plate Monitor System")
         self.resize(1300, 800)
         self.setStyleSheet("background-color: #1a1a1a;")
         self.video_thread: VideoThread | None = None
         self.stored_detector: LicensePlateDetector | None = None
 
-        self.action_group = QGroupBox("Thao tác nhanh")
-        action_layout = QHBoxLayout(self.action_group)
+    def _create_widgets(self) -> None:
+        # Video & Sidebar
+        self.video_label = QLabel("Đang chờ bắt đầu...")
+        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sidebar = DetectionSidebar()
 
-        # Nút Start/Stop
-        self.start_btn = QPushButton("Bắt đầu")
-        self.start_btn.clicked.connect(self.toggle_detection)
-        self.start_btn.setStyleSheet(
-            "background-color: #2e7d32; color: white; font-weight: bold;"
-        )
-
-        # Nút Tạm dừng
-        self.pause_btn = QPushButton("Tạm dừng")
-        self.pause_btn.setEnabled(False)
-        self.pause_btn.clicked.connect(self.toggle_pause)
-
-        # Clear History Button
-        self.clear_sidebar_btn = QPushButton("Xóa lịch sử")
-        self.clear_sidebar_btn.setStyleSheet("background-color: #444; color: white;")
-        self.clear_sidebar_btn.setEnabled(False)
-        self.clear_sidebar_btn.clicked.connect(self.clear_sidebar)
-
-        action_layout.addWidget(self.start_btn)
-        action_layout.addWidget(self.pause_btn)
-        action_layout.addWidget(self.clear_sidebar_btn)
-
-        # TABS
+        # Tabs
         self.tabs = QTabWidget()
         self.source_tab = SourceTab()
         self.ai_tab = AISettingTab()
-
         self.tabs.addTab(self.source_tab, "📡 Nguồn Video")
         self.tabs.addTab(self.ai_tab, "🤖 Cấu hình AI")
 
-        # DOCKS
-        self.dock_settings = SettingsDock(self)
-        self.stats_dock = StatsDock(self)
+        # Actions & Status
+        self.start_btn = QPushButton("Bắt đầu")
+        self.pause_btn = QPushButton("Tạm dừng")
+        self.clear_btn = QPushButton("Xóa lịch sử")
 
-        self.dock_settings.setWidget(self.tabs)
-
-        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.stats_dock)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock_settings)
-
-        # MENU BAR
-        menu_bar = cast(QMenuBar, self.menuBar())
-        view_menu = cast(QMenu, menu_bar.addMenu("Hiển thị"))
-
-        show_settings_action = cast(QAction, self.dock_settings.toggleViewAction())
-        show_settings_action.setText("Bảng cài đặt")
-
-        stats_toggle_action = cast(QAction, self.stats_dock.toggleViewAction())
-        stats_toggle_action.setText("Bảng thống kê")
-
-        view_menu.addAction(stats_toggle_action)
-        view_menu.addAction(show_settings_action)
-
-        # Layout chính
-        main_vbox = QVBoxLayout()
-
-        # Progress Bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet(
             """
@@ -119,42 +96,63 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.hide()
 
-        # Notification Area
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Sẵn sàng.")
         self.status_bar.setStyleSheet("font-size: 14px;")
 
-        self.source_tab.combo.currentTextChanged.connect(self.on_source_type_changed)
-        self.source_tab.input.textChanged.connect(self.on_url_changed)
+        # Dock Widgets
+        self.dock_settings = SettingsDock(self)
+        self.dock_settings.setWidget(self.tabs)
+        self.stats_dock = StatsDock(self)
 
-        # Ngang (Video | Sidebar)
+    def _setup_layouts(self) -> None:
+        # Action Layout
+        action_group = QGroupBox("Thao tác nhanh")
+        action_layout = QHBoxLayout(action_group)
+        action_layout.addWidget(self.start_btn)
+        action_layout.addWidget(self.pause_btn)
+        action_layout.addWidget(self.clear_btn)
+
+        # Content Layout (Video + Sidebar)
         content_layout = QHBoxLayout()
+        content_layout.addWidget(self.video_label, stretch=4)
+        content_layout.addWidget(self.sidebar, stretch=1)
 
-        # Video Area
-        self.video_label = QLabel("Đang chờ bắt đầu...")
-        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        content_layout.addWidget(self.video_label, stretch=4)  # Chiếm 4 phần diện tích
-
-        # Sidebar Area
-        self.sidebar_scroll = QScrollArea()
-        self.sidebar_scroll.setWidgetResizable(True)
-        self.sidebar_container = QWidget()
-        self.sidebar_layout = QVBoxLayout(self.sidebar_container)
-        self.sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        # self.sidebar_scroll.setWidgetResizable(True)
-        self.sidebar_scroll.setFixedWidth(300)
-        self.sidebar_scroll.setWidget(self.sidebar_container)
-        content_layout.addWidget(self.sidebar_scroll, stretch=1)
-
-        # Thêm vào main layout
-        main_vbox.addWidget(self.action_group)
+        # Main Layout
+        main_vbox = QVBoxLayout()
+        main_vbox.addWidget(action_group)
         main_vbox.addWidget(self.progress_bar)
         main_vbox.addLayout(content_layout)
 
         central_widget = QWidget()
         central_widget.setLayout(main_vbox)
         self.setCentralWidget(central_widget)
+
+    def _setup_docks_and_menus(self) -> None:
+        self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, self.stats_dock)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock_settings)
+
+        menu_bar = cast(QMenuBar, self.menuBar())
+        view_menu = cast(QMenu, menu_bar.addMenu("Hiển thị"))
+
+        show_settings_action = cast(QAction, self.dock_settings.toggleViewAction())
+        show_settings_action.setText("Bảng cài đặt")
+
+        stats_toggle_action = cast(QAction, self.stats_dock.toggleViewAction())
+        stats_toggle_action.setText("Bảng thống kê")
+
+        # Gắn toggle actions vào Menu
+        view_menu.addAction(self.dock_settings.toggleViewAction())
+        view_menu.addAction(self.stats_dock.toggleViewAction())
+
+    def _connect_signals(self) -> None:
+        self.start_btn.clicked.connect(self.toggle_detection)
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        self.clear_btn.clicked.connect(self.sidebar.clear_history)
+
+        self.source_tab.combo.currentTextChanged.connect(self.on_source_type_changed)
+        self.source_tab.input.textChanged.connect(self.on_url_changed)
 
     def update_stats(self, counts: dict[str, int]) -> None:
         """Cập nhật dòng chữ thống kê trên Dashboard"""
@@ -171,34 +169,6 @@ class MainWindow(QMainWindow):
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
-
-    def add_detection_card(self, data: dict[str, Any]) -> None:
-        # Giới hạn số lượng card trên màn hình để tránh crash
-        max_cards = 20
-        while self.sidebar_layout.count() >= max_cards:
-            item = self.sidebar_layout.takeAt(self.sidebar_layout.count() - 1)
-            if item:
-                widget = item.widget()
-                if widget is not None:
-                    widget.deleteLater()
-
-        # Thêm card mới lên trên cùng của sidebar
-        card = DetectionCard(data)
-        self.sidebar_layout.insertWidget(0, card)
-        # Hiệu ứng cuộn nhẹ nhàng về đầu danh sách
-        scrollbar = self.sidebar_scroll.verticalScrollBar()
-        if scrollbar is not None:
-            scrollbar.setValue(0)
-
-    def clear_sidebar(self) -> None:
-        """Xóa sạch các card trong sidebar"""
-        while self.sidebar_layout.count() > 0:
-            item = self.sidebar_layout.takeAt(0)
-            if item:
-                widget = item.widget()
-                if widget is not None:
-                    widget.deleteLater()
-        self.status_bar.showMessage("Đã xóa lịch sử nhận diện.")
 
     def on_source_type_changed(self, text: str) -> None:
         """Tự động ẩn/hiện độ phân giải tùy theo nguồn"""
@@ -221,13 +191,7 @@ class MainWindow(QMainWindow):
                 "color: #FF5555; font-weight: bold; font-size: 18px;"
             )
 
-            # Clear sidebar
-            while self.sidebar_layout.count() > 0:
-                item = self.sidebar_layout.takeAt(0)
-                if item:
-                    widget = item.widget()
-                    if widget is not None:
-                        widget.deleteLater()
+            self.sidebar.clear_history()
 
             self.start_btn.setText("Bắt đầu")
             self.start_btn.setStyleSheet("background-color: #2e7d32; color: white;")
@@ -268,7 +232,7 @@ class MainWindow(QMainWindow):
             self.video_thread.progress_signal.connect(self.update_notification)
             self.video_thread.detector_ready_signal.connect(self.save_detector)
             self.video_thread.change_pixmap_signal.connect(self.update_video)
-            self.video_thread.new_detection_signal.connect(self.add_detection_card)
+            self.video_thread.new_detection_signal.connect(self.sidebar.add_card)
             self.video_thread.stats_signal.connect(self.update_stats)
             self.video_thread.start()
 

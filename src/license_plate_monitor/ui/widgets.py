@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QImage, QPixmap
@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -78,12 +79,53 @@ class DetectionCard(QFrame):
         layout.addLayout(info_layout)
 
 
+class DetectionSidebar(QScrollArea):
+    """Lớp chuyên trách quản lý danh sách các biển số nhận diện được"""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        # self.setWidgetResizable(True)
+        self.setFixedWidth(300)
+
+        self.container = QWidget()
+        self.sidebar_layout = QVBoxLayout(self.container)
+        self.sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.container.setLayout(self.sidebar_layout)
+        self.setWidget(self.container)
+
+        self.max_cards = 20
+
+    def add_card(self, data: dict[str, Any]) -> None:
+        """Thêm card mới và tự động xóa card cũ nếu vượt giới hạn"""
+        while self.sidebar_layout.count() >= self.max_cards:
+            item = self.sidebar_layout.takeAt(self.sidebar_layout.count() - 1)
+            if item and item.widget():
+                # Ép kiểu để IDE đần độn không báo lỗi
+                cast(QWidget, item.widget()).deleteLater()
+
+        card = DetectionCard(data)
+        self.sidebar_layout.insertWidget(0, card)
+
+        # Tự động cuộn lên đầu
+        scrollbar = self.verticalScrollBar()
+        if scrollbar:
+            scrollbar.setValue(0)
+
+    def clear_history(self) -> None:
+        """Xóa toàn bộ lịch sử hiển thị"""
+        while self.sidebar_layout.count() > 0:
+            item = self.sidebar_layout.takeAt(0)
+            if item and item.widget():
+                cast(QWidget, item.widget()).deleteLater()
+
+
 class SourceTab(QWidget):
     """Quản lý cấu hình nguồn vào"""
 
     def __init__(self) -> None:
         super().__init__()
         layout = QGridLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.combo = QComboBox()
         self.combo.addItems(["YouTube", "Webcam", "Local File", "RTSP"])
